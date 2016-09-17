@@ -36755,7 +36755,7 @@ ButtonManager.prototype.setMode = function(mode, isVRCompatible) {
   }
   switch (mode) {
     case Modes.NORMAL:
-      this.fsButton.style.display = 'block';
+      this.fsButton.style.display = 'none';
       this.fsButton.src = this.ICONS.fullscreen;
       this.vrButton.style.display = (isVRCompatible ? 'block' : 'none');
       this.backButton.style.display = 'none';
@@ -36957,7 +36957,7 @@ CardboardDistorter.prototype.updateDeviceInfo = function(deviceInfo) {
   // Set distortion coefficients.
   var coefficients = deviceInfo.viewer.distortionCoefficients;
   uniforms.distortion.value.set(coefficients[0], coefficients[1]);
-      
+
 
   // For viewer profile debugging, show the lens center.
   if (WebVRConfig.SHOW_EYE_CENTERS) {
@@ -37175,7 +37175,7 @@ DeviceInfo.prototype.getProjectionMatrixLeftEye = function(opt_isUndistorted) {
 
   // makeFrustum expects units in tan-angle space.
   projectionMatrix.makeFrustum(-left, right, -bottom, top, near, far);
-  
+
   return projectionMatrix;
 };
 
@@ -37280,7 +37280,7 @@ module.exports = DeviceInfo;
 var BarrelDistortionFragment = {
   type: 'fragment_v2',
 
-  
+
   uniforms: {
     texture:   { type: 't', value: null },
     distortion: { type: 'v2', value: new THREE.Vector2(0.441, 0.156) },
@@ -43359,7 +43359,7 @@ PhotosphereRenderer.prototype.init = function() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 
   // Round down fractional DPR values for better performance.
-  renderer.setPixelRatio(Math.floor(window.devicePixelRatio));
+  renderer.setPixelRatio(Math.max(1, Math.floor(window.devicePixelRatio)));
   container.appendChild(renderer.domElement);
 
   var controls = new THREE.VRControls(camera);
@@ -44127,14 +44127,103 @@ module.exports = VertexDistorter;
 
 },{"../node_modules/three/three":5,"./eyes":10,"./util":16}],18:[function(_dereq_,module,exports){
 // shim for using process in browser
-
 var process = module.exports = {};
+
+// cached from whatever global is present so that test runners that stub it
+// don't break things.  But we need to wrap it in a try catch in case it is
+// wrapped in strict mode code which doesn't define any globals.  It's inside a
+// function because try/catches deoptimize in certain engines.
+
+var cachedSetTimeout;
+var cachedClearTimeout;
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+(function () {
+    try {
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    try {
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
 var queue = [];
 var draining = false;
 var currentQueue;
 var queueIndex = -1;
 
 function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+        return;
+    }
     draining = false;
     if (currentQueue.length) {
         queue = currentQueue.concat(queue);
@@ -44150,7 +44239,7 @@ function drainQueue() {
     if (draining) {
         return;
     }
-    var timeout = setTimeout(cleanUpNextTick);
+    var timeout = runTimeout(cleanUpNextTick);
     draining = true;
 
     var len = queue.length;
@@ -44167,7 +44256,7 @@ function drainQueue() {
     }
     currentQueue = null;
     draining = false;
-    clearTimeout(timeout);
+    runClearTimeout(timeout);
 }
 
 process.nextTick = function (fun) {
@@ -44179,7 +44268,7 @@ process.nextTick = function (fun) {
     }
     queue.push(new Item(fun, args));
     if (queue.length === 1 && !draining) {
-        setTimeout(drainQueue, 0);
+        runTimeout(drainQueue);
     }
 };
 
